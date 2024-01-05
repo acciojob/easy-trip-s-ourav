@@ -16,6 +16,11 @@ import java.util.HashMap;
 
 @Repository
 public class AirportRepo {
+
+    AirportRepo()
+    {
+    }
+
     HashMap<String,Airport> airportMap = new HashMap<>();
     HashMap<Integer,Flight> flightMap = new HashMap<>();
     HashMap<Integer,Passenger> passengerMap = new HashMap<>();
@@ -35,7 +40,7 @@ public class AirportRepo {
 
         //Largest airport is in terms of terminals. 3 terminal airport is larger than 2 terminal airport
         //Incase of a tie return the Lexicographically smallest airportName
-        int max=0;
+        int max=Integer.MIN_VALUE;
         String LargestName="";
         for(String airport : airportMap.keySet()){
             if(airportMap.get(airport).getNoOfTerminals()>max){
@@ -62,14 +67,17 @@ public class AirportRepo {
         return ans==Double.MAX_VALUE?-1:ans;
     }
 
-    public int getNumberOfPeopleOn(Date date,String airportName){
+    public int getNumberOfPeopleOn(Date date,String airportName) throws Exception{
 
         //Calculate the total number of people who have flights on that day on a particular airport
         //This includes both the people who have come for a flight and who have landed on an airport after their flight
+        if(fIdVsPassId.size()==0 || flightMap.size()==0 || airportMap.size()==0)
+            return 0;
         int ans=0;
-        for(int fid : fIdVsPassId.keySet() ){
-            if( flightMap.get(fid).getFlightDate().equals(date) && ( (flightMap.get(fid).getFromCity().name().equals(airportName)) || (flightMap.get(fid).getToCity().name().equals(airportName)) ) ) {
-                ans+= fIdVsPassId.get(fid).size();
+        for (Flight flight : flightMap.values()) {
+            if ((date.equals(flight.getFlightDate()) == true) &&
+                    (flight.getFromCity().equals(airportMap.get(airportName).getCity()) || flight.getToCity().equals(airportMap.get(airportName).getCity()))) {
+                ans += fIdVsPassId.get(flight.getFlightId()).size();
             }
         }
         return ans;
@@ -81,7 +89,7 @@ public class AirportRepo {
         //Price for any flight will be : 3000 + noOfPeopleWhoHaveAlreadyBooked*50
         //Suppose if 2 people have booked the flight already : the price of flight for the third person will be 3000 + 2*50 = 3100
         //This will not include the current person who is trying to book, he might also be just checking price
-        if(!flightMap.containsKey((flightId)) || !fIdVsPassId.containsKey(flightId))
+        if(!flightMap.containsKey((flightId)) )
             return 0;
 
         int noOfPeopleWhoHaveAlreadyBooked= fIdVsPassId.get(flightId).size()  ;
@@ -95,20 +103,18 @@ public class AirportRepo {
         //Also if the passenger has already booked a flight then also return "FAILURE".
         //else if you are able to book a ticket then return "SUCCESS"
 
+        if(!flightMap.containsKey(flightId) && !passengerMap.containsKey(passengerId))
+            return "FAILURE";
+
         if(fIdVsPassId.get(flightId).size()>=flightMap.get(flightId).getMaxCapacity()){
             return "FAILURE";
         }
-        if(pIdVsFlight.containsKey(passengerId))
+
+        if(fIdVsPassId.get(flightId).contains(passengerId))
             return "FAILURE";
 
-        ArrayList<Integer> temp= fIdVsPassId.containsKey(flightId) ? fIdVsPassId.get(flightId): new ArrayList<>();
-        temp.add(passengerId);
-        fIdVsPassId.put(flightId,new ArrayList<>(temp)) ;
-
-        temp=pIdVsFlight.containsKey(passengerId) ? pIdVsFlight.get(passengerId) : new ArrayList<>();
-        temp.add(flightId);
-        pIdVsFlight.put(passengerId,new ArrayList<>(temp));
-
+        fIdVsPassId.get(flightId).add(passengerId);
+        pIdVsFlight.get(passengerId).add(flightId);
         return "SUCCESS";
     }
 
@@ -118,27 +124,19 @@ public class AirportRepo {
         // Otherwise return a "SUCCESS" message
         // and also cancel the ticket that passenger had booked earlier on the given flightId
 
-        if( !passengerMap.containsKey(passengerId) || !flightMap.containsKey(flightId) || !fIdVsPassId.containsKey(flightId) || !pIdVsFlight.containsKey(passengerId) )
-            return "FAILURE";
-        boolean flag=false;
-
-        for(int fid : fIdVsPassId.keySet()){
-            if(fid==flightId){
-                for(int i=0;i<fIdVsPassId.get(fid).size();i++){
-                    if(passengerId==fIdVsPassId.get(fid).get(i)){
-                        fIdVsPassId.get(fid).remove(i);
-                        if(fIdVsPassId.get(fid).size()==0)
-                            fIdVsPassId.remove(fid);
-                        flag=true;
-                        break;
-                    }
-                }
-            }
-        }
-        if(!flag)
+        if( !passengerMap.containsKey(passengerId) || !flightMap.containsKey(flightId)  )
             return "FAILURE";
 
-        pIdVsFlight.remove(passengerId);
+        if(!fIdVsPassId.get(flightId).contains(passengerId))
+            return "FAILURE";
+
+        int pi=fIdVsPassId.get(flightId).indexOf(passengerId);
+        fIdVsPassId.get(flightId).remove(pi);
+
+        int fi=pIdVsFlight.get(passengerId).indexOf(flightId);
+        pIdVsFlight.get(passengerId).remove(fi);
+
+
         return "SUCCESS";
     }
 
@@ -151,7 +149,10 @@ public class AirportRepo {
 
     public String addFlight(Flight flight){
         //Return a "SUCCESS" message string after adding a flight.
+        if(flightMap.containsKey(flight))
+            return "FAILURE";
         flightMap.put(flight.getFlightId(),flight);
+        fIdVsPassId.put(flight.getFlightId(),new ArrayList<>());
         return "SUCCESS";
     }
 
@@ -161,7 +162,14 @@ public class AirportRepo {
         //return null incase the flightId is invalid or you are not able to find the airportName
         if(!flightMap.containsKey(flightId))
             return null;
-       return flightMap.get(flightId).getFromCity().name();
+
+        Flight f=flightMap.get(flightId);
+
+        for(Airport a : airportMap.values()){
+            if(f.getFromCity().equals(a.getCity()))
+                return a.getAirportName();
+        }
+        return "null";
     }
 
     public int calculateRevenueOfAFlight(int flightId){
@@ -173,8 +181,7 @@ public class AirportRepo {
         int revenue=0;
         if(!fIdVsPassId.containsKey(flightId))
             return 0;
-        ArrayList<Integer> passengers=fIdVsPassId.get(flightId);
-        int n=passengers.size();
+        int n=fIdVsPassId.get(flightId).size();
         for(int i=0;i<n;i++){
             revenue+= (3000+i*50);
         }
@@ -186,7 +193,10 @@ public class AirportRepo {
 
         //Add a passenger to the database
         //And return a "SUCCESS" message if the passenger has been added successfully.
+        if(passengerMap.containsKey(passenger))
+            return null;
         passengerMap.put(passenger.getPassengerId(),passenger);
+        pIdVsFlight.put(passenger.getPassengerId(),new ArrayList<>());
         return "SUCCESS";
     }
 }
